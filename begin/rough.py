@@ -1,49 +1,72 @@
-import asyncio
-from playwright.async_api import async_playwright
+from playwright.sync_api import sync_playwright
+import random
+import time
+import logging
 
-async def fetch_proxies(page):
-    try:
-        await page.goto("https://free-proxy-list.net/", wait_until='networkidle', timeout=60000)
+# Configure logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-        # Check the full page content to debug
-        content = await page.content()
-        print("Full Page content loaded for debugging:")
-        print(content)  # Print the entire page content
+# List of proxies
+PROXIES = [
+    'http://158.255.77.169:80',
+    'http://43.200.77.128:3128',
+    'http://83.68.136.236:80',
+    'http://179.96.28.58:80',
+    'http://198.44.255.5:80',
+]
 
-        # Scrape the proxy table
-        print("Fetching proxies...")
-        rows = await page.query_selector_all('table#proxylisttable tbody tr')
-        proxies = []
+TARGET_URL = 'https://es.kompass.com/businessplace/z/de/'
+DELAY_MIN = 3
+DELAY_MAX = 5
 
-        for row in rows:
-            columns = await row.query_selector_all('td')
-            if len(columns) >= 2:  # Ensure there are at least two columns for IP and port
-                ip = await columns[0].inner_text()
-                port = await columns[1].inner_text()
-                proxies.append(f"{ip}:{port}")
+def random_delay():
+    """Introduce a random delay to mimic human behavior."""
+    delay = random.uniform(DELAY_MIN, DELAY_MAX)
+    logging.info(f"Waiting for {delay:.2f} seconds...")
+    time.sleep(delay)
 
-        print(f"Fetched {len(proxies)} proxies.")
-        return proxies
+def scrape_company_name(page):
+    """Scrape the company name from the page."""
+    logging.info("Scraping the company name...")
+    company = page.query_selector('a.title')
+    if company:
+        return company.inner_text()
+    else:
+        logging.warning("No company found.")
+        return None
 
-    except Exception as e:
-        print(f"Error fetching proxies: {e}")
-        return []
+def main():
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=False)
+        
+        for proxy in PROXIES:
+            logging.info(f"Using proxy: {proxy}")
+            page = browser.new_page(proxy={"server": proxy})
 
-async def main():
-    async with async_playwright() as p:
-        print("Launching browser...")
-        browser = await p.chromium.launch(headless=False)  # Show the browser window
-        context = await browser.new_context()  # Create a new context for the scraping
+            try:
+                random_delay()  # Delay before navigation
+                logging.info("Navigating to the target page...")
+                page.goto(TARGET_URL, wait_until='networkidle', timeout=60000)
+                
+                random_delay()  # Delay after navigation
 
-        page = await context.new_page()
+                # Allow user to solve CAPTCHA if prompted
+                logging.info("Please solve the CAPTCHA manually if prompted...")
+                random_delay()
 
-        # Fetch proxies
-        proxies = await fetch_proxies(page)
+                company_name = scrape_company_name(page)
+                if company_name:
+                    logging.info(f"Company Name: {company_name}")
+                    break  # Exit loop if successful
 
-        # Output proxies to verify
-        print("Proxies fetched:", proxies)
+            except Exception as e:
+                logging.error(f"An error occurred with proxy {proxy}: {e}")
 
-        await browser.close()
+            finally:
+                page.close()
+
+        browser.close()
+        logging.info("Browser closed.")
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    main()
